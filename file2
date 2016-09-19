@@ -1,0 +1,220 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#define TRUE 1;
+#define FALSE 0;
+
+enum file_type { 
+	DATA, 
+	EMPTY, 
+	ASCII, 	
+	ISO8859, 
+	UTF8, 
+	UTF16_LITTLE, 
+	UTF16_BIG	
+ 
+};
+const char * const FILE_TYPE_STRINGS[] = {
+	"data",
+	"empty", 
+	"ASCII text", 
+	"ISO-8859 text", 
+	"UTF-8 Unicode text", 
+	"Little-endian UTF-16 Unicode text", 
+	"Big-endian UTF-16 Unicode text"
+ 
+};
+
+
+// funktioner
+int ReadFile(FILE* f, enum file_type *a);
+int isAscii(int hex);
+int isISO(int hex);
+int isUTF8(int hex, int *count);
+int isUTF16L(int hex, int *count);
+int isUTF16B(int hex, int *count);
+
+//main
+int main(int argc, char const *argv[])
+{
+	// test
+	FILE* files[argc+1];
+	enum file_type a[argc+1];
+
+
+	for (int i = 1; i < argc; ++i)
+	{
+		// Open files
+		files[i] = fopen(argv[i], "r");
+		if (!files[i])
+		{
+			// If files doesnt exist, terminate with failure
+			perror("fopen_failed");
+			return EXIT_FAILURE;
+		}
+		
+	}
+
+	
+	for (int j = 1; j < argc; ++j)
+	{	
+		ReadFile(files[j], &a[j]);
+		fclose(files[j]);
+	}
+
+	printf("FILES READ");
+
+	
+	// brug af enum.
+	/*enum file_type a = DATA;
+	printf("%s\n", FILE_TYPE_STRINGS[1]);
+	*/
+	
+	for(int i = 1; i < argc; ++i){
+		printf("%s\n", FILE_TYPE_STRINGS[a[i]]);
+	}
+	
+	
+	//printf("%s\n", FILE_TYPE_STRINGS[a[2]]);
+	return 0;
+}
+	
+int ReadFile(FILE* f, enum file_type *x){
+	int c;
+	//int zeroCount;
+	int utf8Count = 0;
+	int utf16Countl = 0;
+	int utf16Countb = 0;
+
+	while( (c = getc(f)) != EOF) {
+			//printf("%x-", c);
+			
+			//sammenligner x hvor alt under 2 ikke kan være ascii
+			if(c == 0 && *x < 1){
+				*x = EMPTY;
+			}
+			
+			if (isAscii(c) && *x < 2){
+				*x = ASCII;
+			}
+			
+			// ISO tjek
+			if (isISO(c) && *x < 3) {
+				*x = ISO8859;
+			}
+
+			// UTF8 Tjek
+			if (isUTF8(c, &utf8Count) && *x < 4){
+				*x = UTF8;
+			}
+
+			
+			if (isUTF16L(c, &utf16Countl) && *x < 5) {
+				*x = UTF16_LITTLE;
+			}
+
+
+			if (isUTF16B(c, &utf16Countb) && *x < 6) {
+				*x = UTF16_BIG;
+			}
+			
+			
+		}
+	printf("END OF FILE\n");
+	return 0;
+}
+
+/*
+int isEmpty(int hex){
+	if(hex == 0x0){
+		//return true;
+	}
+}*/
+
+int isAscii(int hex){
+	
+	if(hex>0 && hex<= 0x7F){
+		
+		return TRUE;
+	}
+	else{
+		return FALSE;
+	}	
+}
+int isISO(int hex){
+	if(hex >= 160 && hex <= 255){
+		return TRUE;
+	}
+	else {
+		return FALSE;
+	}
+
+}
+
+int isUTF8(int hex, int *count){
+	if(*count == 0)
+	{
+		if((hex & 0xc0) == 0xc0){
+			*count = 1;
+			
+			// nu skal vi se på en byte mere.
+		} else if((hex & 0xe0) == 0xe0){
+			*count = 2;
+		}
+		  else if((hex & 0xf0) == 0xf0){
+			*count = 3;
+		} 
+		return FALSE;
+	}
+	else{
+		if((hex & 0x80) == 0x80){
+			*count = *count - 1;
+			if(*count == 0){
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
+}
+
+int isUTF16L(int hex, int *count){
+	if(*count == 0){
+		// første tjek
+		if((hex & 0xFF) == 0xFF){
+			*count = *count + 1;
+			return FALSE;
+		}
+		else
+			return FALSE;
+	} else if (*count == 1) {
+		// tjek næste bit
+		if((hex & 0xFE) == 0xFE) {
+			return TRUE;
+		}
+		else
+			return FALSE;
+	} else
+		return FALSE;
+}
+
+int isUTF16B(int hex, int *count){
+	if(*count == 0){
+		// første tjek
+		if((hex & 0xFE) == 0xFE){
+			*count = *count + 1;
+			return FALSE;
+		}
+		else
+			return FALSE;
+	} else if (*count == 1) {
+		// tjek næste bit
+		if((hex & 0xFF) == 0xFF) {
+			return TRUE;
+		}
+		else
+			return FALSE;
+	} else
+		return FALSE;
+}
