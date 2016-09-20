@@ -1,0 +1,291 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#define TRUE 1;
+#define FALSE 0;
+
+enum file_type { 
+	DATA, 
+	EMPTY, 
+	ASCII, 	
+	ISO8859, 
+	UTF8, 
+	UTF16_LITTLE, 
+	UTF16_BIG	
+ 
+};
+const char * const FILE_TYPE_STRINGS[] = {
+	"data",
+	"empty", 
+	"ASCII text", 
+	"ISO-8859 text", 
+	"UTF-8 Unicode text", 
+	"Little-endian UTF-16 Unicode text", 
+	"Big-endian UTF-16 Unicode text"
+ 
+};
+
+
+
+// funktioner
+int openFile(FILE* *file,char const *argv);
+int ReadAsciiFile(char const *argv);
+int ReadUTF8(char const *argv);
+int ReadISO(char const *argv);
+int ReadUTF16L(char const *argv);
+int ReadUTF16B(char const *argv);
+int ReadEmpty(char const *argv);
+
+
+int main(int argc, char const *argv[])
+{	
+  	
+    if (argc == 1) {
+		printf("Please specify files to be determined\n");
+		return EXIT_FAILURE;	
+	}
+
+
+	// determine max len of
+	int max_len = strlen(argv[1]);
+	for (int i = 1; i < argc; i++ ) {
+           if ((int)strlen(argv[i]) > max_len) {
+              max_len = strlen(argv[i]);
+			}
+		}
+	
+
+
+	// array of file types, for each file.
+	enum file_type a[argc];
+
+	for (int i = 1; i < argc; ++i)
+	{
+		// test if file can open
+		FILE* file = fopen(argv[i], "r");
+		if(file){
+			// it opens, close an reopen further down.
+			fclose(file);
+			
+			// variable to help with false
+			int isEmpty = FALSE;
+			// Open files
+			
+
+			//test if file empty
+			if (ReadEmpty(argv[i]) ) {
+				isEmpty = TRUE;
+				
+				a[i] = EMPTY;
+			}
+			// test if file ascii
+			if (ReadAsciiFile(argv[i]) && !isEmpty){
+				
+				a[i] = ASCII;
+			}
+			// test if file ISO
+			if (ReadISO(argv[i]) ) {
+				
+				a[i] = ISO8859;
+			}
+
+			//test if file UTF8
+			if (ReadUTF8(argv[i]) ) {
+				
+				a[i] = UTF8;
+			}
+
+			//test if file UTF16LITTLE
+			if(ReadUTF16L(argv[i])){
+				
+				a[i] = UTF16_LITTLE;
+			}
+
+			//test if file UTF16BIG
+			if(ReadUTF16B(argv[i])){
+				
+				a[i] = UTF16_BIG;
+			}
+		} else {
+			// Failed to open file, print error message
+			printf("%-10scannot open '%s' (no such file or directory)\n", argv[i], argv[i]);		
+		}
+	}
+
+	
+	
+
+	
+	for(int i = 1; i < argc; ++i){
+		// Print the determined file types
+		printf("%s:%*s %s\n", argv[i], (int)(max_len - strlen(argv[i])),"",FILE_TYPE_STRINGS[a[i]]);
+	}
+
+	return 0;
+}
+
+int openFile(FILE* *file, char const *argv){
+	
+	*file = fopen(argv, "r");
+	if (!file)
+	{
+		// this if statement is never accessed, bug unresolved.
+		// If files doesnt exist, terminate with failure
+		perror("fopen_failed");
+		return EXIT_FAILURE;
+	}
+	return 0;
+}
+
+
+int ReadAsciiFile(char const *argv){
+	int c;
+
+	FILE* file;
+	openFile(&file, argv);
+
+	while( (c = getc(file)) != EOF) {
+		if( c == 0 || c > 159){
+			// we found a char thats not ascii. return false
+			fclose(file);
+					
+			return FALSE;
+		}
+		
+	}
+	
+	//all chars are ascii
+	fclose(file);
+	return TRUE;
+}
+
+int ReadUTF8(char const *argv){
+	int c;
+	//variable to keep track of subsequent bits to check
+	int count = 0; 
+
+	FILE* file;
+	openFile(&file, argv);
+	
+	while( (c = getc(file)) != EOF) {
+		if(count == 0)
+		{
+			if((c & 0xc0) == 0xc0){
+				// bit masked to 110xxxxx, check if 1 more holds
+				count = 1;
+			} else if((c & 0xe0) == 0xe0){
+				// bit masked to 1110xxxx, check if 2 more holds				
+				count = 2;
+			}
+			  else if((c & 0xf0) == 0xf0){
+				// bit masked to 11110xxx, check if 3 more holds
+				count = 3;
+			}
+			continue;
+		} 
+		else{
+			if((c & 0x80) == 0x80){
+				// a byte held, decrement count and continue
+				count = count - 1;
+				if(count == 0){
+					// no more bytes to check. we have an utf8 !
+					return TRUE;
+				}
+			}
+			return FALSE;
+		}
+	}
+	fclose(file);
+	return FALSE;
+}
+
+int ReadISO(char const *argv){
+	int c;
+	
+	FILE* file;
+	openFile(&file, argv);
+
+	while( (c = getc(file)) != EOF) {
+		if(c>=160 && c <= 255){
+			// we have a byte in the iso range. move on
+			fclose(file);
+			return TRUE;
+		}
+	}
+	// no ISO, return false
+	fclose(file);
+	return FALSE;
+}
+
+int ReadUTF16L(char const *argv){
+	int c;
+
+	FILE* file;
+	openFile(&file, argv);
+	int count = 0;
+
+	while( (c = getc(file)) != EOF) {
+		if(count == 0){
+			if((c & 0xFF) == 0xFF){
+				count = count + 1;
+				continue;
+			} else
+				return FALSE;
+		}
+		else if(count == 1){
+			if((c & 0xFE) == 0xFE){
+				return TRUE;
+			}
+			else 
+				return FALSE;
+		}
+	}
+	fclose(file);	
+	return FALSE;
+}
+
+int ReadUTF16B(char const *argv){
+	int c;
+
+	FILE* file;
+	openFile(&file, argv);
+	int count = 0;
+
+	while( (c = getc(file)) != EOF) {
+		if(count == 0){
+			if((c & 0xFE) == 0xFE){
+				count = count + 1;
+				continue;
+			} else
+				return FALSE;
+		} 
+		else if(count == 1){
+			if((c & 0xFF) == 0xFF){
+				return TRUE;
+			}
+			else 
+				return FALSE;
+		}
+	}
+	fclose(file);
+	return FALSE;
+}
+
+int ReadEmpty(char const *argv){
+	int c;
+
+	FILE* file;
+	openFile(&file, argv);
+
+	while ((c = getc(file)) != EOF)	{
+		if(c != 0){
+			// a byte is not 0, its non empty
+			return FALSE;
+		}
+	}
+	// no bytes, or all bytes zero. return true
+	fclose(file);
+	return TRUE;
+}
